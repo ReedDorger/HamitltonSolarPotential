@@ -1,0 +1,144 @@
+---
+title: "Geo460Project"
+author: "Reed Dorger"
+date: "12/12/2019"
+output: pdf_document
+---
+Read in packages that we will use for this project. Also, change the "scipen" option to 999 and set a working directoy
+```{r}
+library("spdep") 
+library("rgdal")
+library("spatialreg")
+library("here")
+library("RColorBrewer")
+library("gdata")
+library("stats")
+library("classInt")
+options("scipen"=999)
+setwd("D:\\Geo460\\Project") 
+```
+
+Read in the data for this project. We are going to use a shaefile of the Hamilton County zip codes. Also add the Cincinnati Bus Route shapefile as well. In this project we are going to focus on the Potential Carbon offset and the Potential Kilowatt output of the different zipcodes. 
+```{r}
+setwd("D:\\Geo460\\Project") 
+Ham <- readOGR("HamSolar")
+Bus <- readOGR("SORTA_Bus_Routes")
+CarbonSp <- Ham$Hamilto_11
+CarbonSp <- as.numeric(CarbonSp)
+kwSp <- Ham$tl_2019__8
+kwSp <- as.numeric(kwSp)
+```
+
+We also need to add the spreadsheet of the solar data of Hamilton County. We are also focusing on the same categories as before. 
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+Csv <- read.csv("HamiltonSolar.csv")
+Carbon <- (Csv$carbon_offset_metric_tons)
+Carbon <- as.numeric(Carbon)
+kw <- Csv$kw_total
+kw <- as.numeric(kw)
+```
+
+Choropleth Map
+Make a choropleth map of the Carbon Offset data subset. Select a color set you want to use for the map through ColorBrew. It will pull a number of shades based off the number of Intervals you choose to show. On a related note, we need to divide the data into the amount Intervals you want to use. We are going to divide the data into "quantiles". Attach the color values to the intervals, and then plot the map. We can see the zip codes that have higher potential for carbon offset. There are a lot of areas that show high levels of potential. However, notice how the different areas have different areas, which might skew the results
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+pal.red <- brewer.pal(5,"Reds")
+CarbInt <- classIntervals(CarbonSp,5,style="quantile") 
+cols.den <- findColours(CarbInt, pal.red)
+plot(Ham, col=cols.den,)
+```
+Now repeat the same for the steps for the Kilowatt data as well. The different zones seem to share the the same levels regarding the inesity of their results. This means that our data could be correlated 
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+pal.red <- brewer.pal(5,"Reds")
+kwInt <- classIntervals(kwSp,5,style="quantile") 
+cols.den2 <- findColours(kwInt, pal.red)
+plot(Ham, col=cols.den)
+```
+
+Bus Map
+Now lets compare the Carbon Offset map and a map of the Cincinnati Bus Routes. This can answer the question of where one could live if they wanted to minimize their carbon footprint. There are many areas just outside the city of Cincinnati that have acess to various bus routes while also living in an area with high Carbon Offset potential. While many of the northern zip codes have the greatest potential, there are not many bus routes available to them. At the same time, there is a ton of Public Transportation downtown, but there is not much potential for Solar Energy near the city limits.
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+par(mfrow=c(1,2))
+plot(Ham, col=cols.den); title(main = list("Carbon Offest of Hamilton County", cex=0.8)) 
+plot(Bus); title(main = list("Cincinnati Bus Routes", cex=0.8)) 
+```
+
+#Test for Normality 
+
+We are going to run shapiro tests on the areas of focus to test if the data is Normally Distributed. 
+First, run a shapiro test on the Carbon Offset data. 
+Create a histogram to map the results of the data. Do the same for the Energy Potential data.
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+shapiro.test(Carbon)
+hist(Carbon,main="Carbon Offset Normality", 
+     xlab="Carbon Offset")
+
+shapiro.test(kw)
+hist(kw, main = "Potential Kilowatt Production Normality", xlab= "Kilowatts")
+```
+We can see that both of these data sets are not normally distributed, but skewed right. This is likely due to the incrimental nature of the data sets. 
+
+
+
+#Descriptive stats
+Now lets look close at the data itself and run some descriptive statstical analysis. We are going to look at the mean, median, and mode for each set of data. Remember, the basic mode function does not work normally, so we will have to create a new function to replace it.
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+mean(kw)
+median(kw)
+#Mode (This code snippet was shared with me by Justin Fain)
+x <-kw
+Mode <- function(x){ ux <- unique(x)
+ux[which.max(tabulate(match(x, ux)))]
+}     
+Mode(x)
+rkw <- round(kw, digits = 0)
+```
+Looking at the results, the Mean and Median results are not close to one another. This is another indication that our data is not normally distributed. We do run into an issue, in that due the uniquenes of the values of each set, there is no common pair of numbers. In this case, the mode is whatever the first number in the set is. Repeat this for the Carbon Offset data as well.
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+mean(Carbon)
+median(Carbon)
+#Mode
+x <-Carbon
+Mode <- function(x){ ux <- unique(x)
+ux[which.max(tabulate(match(x, ux)))]
+}
+Mode(x)
+```
+Your results should be the same as before, another reason that our data is liekly not normally distributed
+
+
+
+#Spatial Auto-Correlation
+Lastly, lets run some tests to measure the spatial correlation of the data.
+We need to make the spatial weights first. While we were using data from the CSV file for the previous two tests, we need to use the data from the shapefiles. Create a Queen neighborhood list of the location points of Hamilton Solar shapefile.  Then turn that neighbors list into a spatial weights. This step is important as it helps quatify the relationship between the features in the Spatial Data
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+queen <-poly2nb(Ham)
+queenSW <- nb2listw(queen, style = "B")
+```
+
+Now lets run the tests. While the Moran's I and Geary's C tests are very similar in their goal, they have different approaches. The Moran's I tests on a "global" scale, meaning it factors all the different spatial locations within the dataset. Geary's C on the other hand, focuses on a "local" scale, which means it only takes into account the locations near the point its evaluating. Run the two tests with the spatial weight. To help visualize the results, plot the moran test.
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+#Carbon Auto-correlation
+moran.test(CarbonSp, queenSW)
+geary.test(CarbonSp, queenSW)
+
+moran.plot(CarbonSp, queenSW, pch = 20, main = "Spatial Correlation of Carbon Offset")
+```
+Looking at the results, we can see that both tests result in a low p-value. For the Moran's test, this indicates that the data is not randomly dispursed. This points to the idea that the data is somewhat correalted globally. The same is true for the Geary's test. There appears to be a small amount of positive correlation between the locations. Plot the moran's I test to get a visual of the results.
+Repeat the same tests for 
+```{r}
+setwd("C:\\Users\\Reed Dorger\\Documents\\JuniorYear\\GEO460G\\Project\\FinalData") 
+moran.test(kwSp, queenSW)
+geary.test(kwSp, queenSW)
+
+moran.plot(kwSp, queenSW, pch = 20, main = "Spatial Correlation of Kilowatt Potential")
+```` 
+The p-values both tests of the Kilowatt data are even lower that the Carbon data. This indicates the results are even less significant, rejecting the null hypothesis that the data is randomly dispursed. The Moran test results were close to 1, so in a global scale there is likely correlation. Looking at the Geary test, the results are similar to before. This means that on a large scale there seems to be a correlation factor with our data. Plot the moran's I test another time to help visualize the data 
